@@ -10,7 +10,11 @@
     "dev": "node start-integrated.js --dev",
     "dev:bot-only": "nodemon src/index.js",
     "website": "cd website && npm run dev",
-    "install-all": "npm install && cd website && npm install"
+    "install-all": "npm install && cd website && npm install",
+    "typecheck:website": "cd website && npx tsc --noEmit",
+    "lint": "echo \"lint not configured yet\" && exit 0",
+    "test": "echo \"test not configured yet\" && exit 0",
+    "qa": "npm run typecheck:website && npm run lint && npm run test"
   },
   "keywords": [
     "discord",
@@ -26,16 +30,16 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "@discordjs/voice": "^0.16.0",
     "axios": "^1.13.2",
     "better-sqlite3": "^11.10.0",
     "discord-html-transcripts": "^3.2.0",
-    "@discordjs/voice": "^0.16.0",
     "discord.js": "^14.18.0",
     "dotenv": "^16.5.0",
     "gtts": "^0.2.1",
     "libsodium-wrappers": "^0.7.13",
-    "opusscript": "^0.0.8",
     "mysql2": "^3.11.3",
+    "opusscript": "^0.0.8",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
