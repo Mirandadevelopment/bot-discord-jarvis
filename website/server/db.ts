@@ -1,7 +1,25 @@
-import { eq, and, desc, gte, lte, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, licenses, botInstances, licenseTransfers, transactions, auditLogs, documents, notifications, InsertLicense, InsertBotInstance, InsertLicenseTransfer, InsertTransaction, InsertAuditLog, InsertDocument, InsertNotification } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import mysql from "mysql2/promise";
+import {
+  type InsertUser,
+  users,
+  licenses,
+  botInstances,
+  licenseTransfers,
+  transactions,
+  auditLogs,
+  documents,
+  notifications,
+  type InsertLicense,
+  type InsertBotInstance,
+  type InsertLicenseTransfer,
+  type InsertTransaction,
+  type InsertAuditLog,
+  type InsertDocument,
+  type InsertNotification,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -10,7 +28,7 @@ export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
       _db = drizzle(process.env.DATABASE_URL);
-      // Auto-configuração: Tenta criar as tabelas silenciosamente
+      // Auto-configuração: tenta criar as tabelas silenciosamente
       await ensureTablesExist();
     } catch (error) {
       console.warn("[Database] Failed to connect or auto-config:", error);
@@ -21,23 +39,25 @@ export async function getDb() {
 }
 
 async function ensureTablesExist() {
-  if (!_db) return;
+  if (!_db || !process.env.DATABASE_URL) return;
+
   try {
-    const mysql = require('mysql2/promise');
     const connection = await mysql.createConnection(process.env.DATABASE_URL);
-    
+
     const tables = [
       `CREATE TABLE IF NOT EXISTS bot_license_users (id INT AUTO_INCREMENT PRIMARY KEY, openId VARCHAR(64) UNIQUE NOT NULL, discordId VARCHAR(64) UNIQUE, name VARCHAR(255), email VARCHAR(320), role ENUM('prospect', 'client', 'admin') DEFAULT 'prospect', createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
-      `CREATE TABLE IF NOT EXISTS bot_licenses (id INT AUTO_INCREMENT PRIMARY KEY, userId INT NOT NULL, licenseKey VARCHAR(64) UNIQUE NOT NULL, plan ENUM('monthly', 'quarterly', 'semiannual', 'annual') NOT NULL, status ENUM('active', 'expired', 'suspended', 'cancelled') DEFAULT 'active', expiryDate DATETIME NOT NULL, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-      `CREATE TABLE IF NOT EXISTS bot_instances (id INT AUTO_INCREMENT PRIMARY KEY, licenseId INT, userId INT NOT NULL, botToken VARCHAR(255) NOT NULL, discordServerId VARCHAR(64) NOT NULL, discordOwnerId VARCHAR(64) NOT NULL, status ENUM('running', 'stopped', 'error', 'migrating') DEFAULT 'stopped', createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)`
+      `CREATE TABLE IF NOT EXISTS bot_licenses (id INT AUTO_INCREMENT PRIMARY KEY, userId INT NOT NULL, licenseKey VARCHAR(64) UNIQUE NOT NULL, plan ENUM('monthly', 'quarterly', 'semiannual', 'annual') NOT NULL, status ENUM('active', 'inactive', 'suspended', 'expired', 'transferred') DEFAULT 'active', expiryDate DATETIME NOT NULL, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+      `CREATE TABLE IF NOT EXISTS bot_instances (id INT AUTO_INCREMENT PRIMARY KEY, licenseId INT, userId INT NOT NULL, botToken VARCHAR(255) NOT NULL, discordServerId VARCHAR(64) NOT NULL, discordOwnerId VARCHAR(64) NOT NULL, status ENUM('running', 'stopped', 'error', 'migrating') DEFAULT 'stopped', createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)`,
     ];
 
     for (const sql of tables) {
       await connection.execute(sql);
     }
+
     await connection.end();
-  } catch (e) {
-    console.warn("[Database] Auto-table creation skipped or failed:", e.message);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.warn("[Database] Auto-table creation skipped or failed:", message);
   }
 }
 
@@ -77,12 +97,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.lastSignedIn = user.lastSignedIn;
       updateSet.lastSignedIn = user.lastSignedIn;
     }
+
     if (user.role !== undefined) {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
     }
 
     if (!values.lastSignedIn) {
@@ -110,7 +131,6 @@ export async function getUserByOpenId(openId: string) {
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -132,12 +152,13 @@ export async function getUserByEmail(email: string) {
 
 // ============ LICENSE QUERIES ============
 
+type LicenseStatus = "active" | "inactive" | "suspended" | "expired" | "transferred";
+
 export async function createLicense(license: InsertLicense) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(licenses).values(license);
-  return result;
+  return await db.insert(licenses).values(license);
 }
 
 export async function getLicenseById(id: number) {
@@ -168,19 +189,17 @@ export async function getAllActiveLicenses() {
   if (!db) return [];
 
   const now = new Date();
-  return await db.select().from(licenses).where(
-    and(
-      eq(licenses.status, 'active'),
-      gte(licenses.expiryDate, now)
-    )
-  );
+  return await db
+    .select()
+    .from(licenses)
+    .where(and(eq(licenses.status, "active"), gte(licenses.expiryDate, now)));
 }
 
-export async function updateLicenseStatus(id: number, status: string) {
+export async function updateLicenseStatus(id: number, status: LicenseStatus) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.update(licenses).set({ status: status as any }).where(eq(licenses.id, id));
+  return await db.update(licenses).set({ status }).where(eq(licenses.id, id));
 }
 
 // ============ BOT INSTANCE QUERIES ============
@@ -211,10 +230,10 @@ export async function updateBotInstanceStatus(id: number, status: string, errorM
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const updateData: any = { instanceStatus: status, lastHealthCheck: new Date() };
+  const updateData: Record<string, unknown> = { instanceStatus: status, lastHealthCheck: new Date() };
   if (errorMessage) updateData.errorMessage = errorMessage;
 
-  return await db.update(botInstances).set(updateData).where(eq(botInstances.id, id));
+  return await db.update(botInstances).set(updateData as never).where(eq(botInstances.id, id));
 }
 
 // ============ LICENSE TRANSFER QUERIES ============
@@ -230,7 +249,7 @@ export async function getPendingTransfers() {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(licenseTransfers).where(eq(licenseTransfers.status, 'pending'));
+  return await db.select().from(licenseTransfers).where(eq(licenseTransfers.status, "pending"));
 }
 
 export async function getTransferById(id: number) {
@@ -245,13 +264,13 @@ export async function updateTransferStatus(id: number, status: string, approvedB
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const updateData: any = { status };
-  if (approvedBy) {
+  const updateData: Record<string, unknown> = { status };
+  if (approvedBy !== undefined) {
     updateData.approvedBy = approvedBy;
     updateData.approvedAt = new Date();
   }
 
-  return await db.update(licenseTransfers).set(updateData).where(eq(licenseTransfers.id, id));
+  return await db.update(licenseTransfers).set(updateData as never).where(eq(licenseTransfers.id, id));
 }
 
 // ============ TRANSACTION QUERIES ============
@@ -322,17 +341,16 @@ export async function getUnreadNotifications(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(notifications).where(
-    and(
-      eq(notifications.userId, userId),
-      eq(notifications.read, 'false')
-    )
-  ).orderBy(desc(notifications.createdAt));
+  return await db
+    .select()
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.read, "false")))
+    .orderBy(desc(notifications.createdAt));
 }
 
 export async function markNotificationAsRead(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.update(notifications).set({ read: 'true' }).where(eq(notifications.id, id));
+  return await db.update(notifications).set({ read: "true" }).where(eq(notifications.id, id));
 }
