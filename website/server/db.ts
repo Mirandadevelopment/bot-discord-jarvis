@@ -158,7 +158,15 @@ export async function createLicense(license: InsertLicense) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.insert(licenses).values(license);
+  const result = await db.insert(licenses).values(license);
+  const insertId = (result as any)?.insertId ?? (result as any)?.[0]?.insertId;
+  if (insertId) {
+    const created = await getLicenseById(Number(insertId));
+    if (created) return created;
+  }
+  const createdByKey = await getLicenseByKey(license.licenseKey);
+  if (!createdByKey) throw new Error("Failed to create license");
+  return createdByKey;
 }
 
 export async function getLicenseById(id: number) {
@@ -208,7 +216,16 @@ export async function createBotInstance(instance: InsertBotInstance) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.insert(botInstances).values(instance);
+  const result = await db.insert(botInstances).values(instance);
+  const insertId = (result as any)?.insertId ?? (result as any)?.[0]?.insertId;
+  if (insertId) {
+    const created = await getBotInstanceById(Number(insertId));
+    if (created) return created;
+  }
+  const items = await getBotInstancesByLicenseId(instance.licenseId);
+  const created = items.sort((a, b) => b.id - a.id)[0];
+  if (!created) throw new Error("Failed to create bot instance");
+  return created;
 }
 
 export async function getBotInstancesByLicenseId(licenseId: number) {

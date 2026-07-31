@@ -6,7 +6,12 @@ const { initializeStaffTables } = require('./staffDatabase');
 const { exportToFile } = require('./db-exporter');
 let ratingPanelHandler; 
 
-const dbPath = path.join(__dirname, '../../database/configs.db'); 
+const dataRoot = process.env.BOT_INSTANCE_DATA_DIR
+    ? path.resolve(process.env.BOT_INSTANCE_DATA_DIR)
+    : path.join(__dirname, '../../database');
+const dbPath = process.env.BOT_CONFIG_DB_PATH
+    ? path.resolve(process.env.BOT_CONFIG_DB_PATH)
+    : path.join(dataRoot, 'configs.db'); 
 const dbDir = path.dirname(dbPath);
 
 // Garantir que o diretório existe
@@ -126,7 +131,7 @@ function initializeDatabase() {
     console.log('✅ Banco de dados inicializado com sucesso!');
     
     // Exportação automática para backup/portabilidade na inicialização
-    const exportPath = path.join(__dirname, '../../database/backup_portabilidade.sql');
+    const exportPath = path.join(dataRoot, 'backup_portabilidade.sql');
     if (exportToFile(db, exportPath)) {
         console.log('💾 Backup SQL para HeidiSQL gerado em: /database/backup_portabilidade.sql');
     }

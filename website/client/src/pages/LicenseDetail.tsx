@@ -6,10 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Loader2, Copy, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, Copy, AlertCircle, Play, Square, RotateCcw, Trash2 } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function LicenseDetail() {
@@ -17,6 +19,7 @@ export default function LicenseDetail() {
   const [, navigate] = useLocation();
   const [match, params] = useRoute("/licenses/:id");
   const licenseId = params?.id ? parseInt(params.id) : 0;
+  const utils = trpc.useUtils();
 
   const { data: license, isLoading } = trpc.licenses.detail.useQuery(
     { licenseId },
@@ -28,29 +31,113 @@ export default function LicenseDetail() {
     { enabled: !!licenseId && !!license }
   );
 
+  const activeInstance = useMemo(() => (instances && instances.length > 0 ? instances[0] : null), [instances]);
+  const activeInstanceId = activeInstance?.id ?? 0;
+
   const [botToken, setBotToken] = useState("");
   const [serverId, setServerId] = useState("");
-  const [ownerId, setOwnerId] = useState("");
+  const [ownerId, setOwnerId] = useState(user?.discordId || "");
+
+  const [siteConfigState, setSiteConfigState] = useState({
+    ticketEnabled: false,
+    whitelistEnabled: false,
+    welcomeEnabled: false,
+    welcomeChannelId: "",
+    welcomeMessage: "",
+    goodbyeEnabled: false,
+    goodbyeChannelId: "",
+    goodbyeMessage: "",
+  });
+
+  trpc.instances.getSiteConfig.useQuery(
+    { instanceId: activeInstanceId },
+    {
+      enabled: !!activeInstanceId,
+      onSuccess: data => {
+        setSiteConfigState({
+          ticketEnabled: !!data.ticketEnabled,
+          whitelistEnabled: !!data.whitelistEnabled,
+          welcomeEnabled: !!data.welcomeEnabled,
+          welcomeChannelId: data.welcomeChannelId || "",
+          welcomeMessage: data.welcomeMessage || "",
+          goodbyeEnabled: !!data.goodbyeEnabled,
+          goodbyeChannelId: data.goodbyeChannelId || "",
+          goodbyeMessage: data.goodbyeMessage || "",
+        });
+      },
+    }
+  );
+
+  const { data: instanceHealth } = trpc.instances.health.useQuery(
+    { instanceId: activeInstanceId },
+    { enabled: !!activeInstanceId, refetchInterval: 10000 }
+  );
+
+  const { data: instanceLogs } = trpc.instances.logs.useQuery(
+    { instanceId: activeInstanceId, maxLines: 120 },
+    { enabled: !!activeInstanceId, refetchInterval: 15000 }
+  );
+
+  const invalidateInstances = async () => {
+    await utils.instances.list.invalidate({ licenseId });
+    if (activeInstanceId) {
+      await utils.instances.health.invalidate({ instanceId: activeInstanceId });
+      await utils.instances.logs.invalidate({ instanceId: activeInstanceId, maxLines: 120 });
+    }
+  };
 
   const createInstanceMutation = trpc.instances.create.useMutation({
-    onSuccess: () => {
-      toast.success("Instance created successfully");
+    onSuccess: async () => {
+      toast.success("Instância criada e inicializada com sucesso");
       setBotToken("");
       setServerId("");
-      setOwnerId("");
+      await invalidateInstances();
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to create instance");
+    onError: error => {
+      toast.error(error.message || "Falha ao criar instância");
     },
   });
 
+  const startInstanceMutation = trpc.instances.start.useMutation({
+    onSuccess: async () => {
+      toast.success("Instância iniciada");
+      await invalidateInstances();
+    },
+    onError: error => toast.error(error.message || "Falha ao iniciar instância"),
+  });
+
+  const stopInstanceMutation = trpc.instances.stop.useMutation({
+    onSuccess: async () => {
+      toast.success("Instância parada");
+      await invalidateInstances();
+    },
+    onError: error => toast.error(error.message || "Falha ao parar instância"),
+  });
+
+  const restartInstanceMutation = trpc.instances.restart.useMutation({
+    onSuccess: async () => {
+      toast.success("Instância reiniciada");
+      await invalidateInstances();
+    },
+    onError: error => toast.error(error.message || "Falha ao reiniciar instância"),
+  });
+
+  const deleteInstanceMutation = trpc.instances.delete.useMutation({
+    onSuccess: async () => {
+      toast.success("Instância encerrada");
+      await invalidateInstances();
+    },
+    onError: error => toast.error(error.message || "Falha ao excluir instância"),
+  });
+
+  const updateSiteConfigMutation = trpc.instances.updateSiteConfig.useMutation({
+    onSuccess: () => toast.success("Configuração aplicada na instância"),
+    onError: error => toast.error(error.message || "Falha ao salvar configuração"),
+  });
+
   const requestTransferMutation = trpc.transfers.request.useMutation({
-    onSuccess: () => {
-      toast.success("Transfer request sent to admin");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to request transfer");
-    },
+    onSuccess: () => toast.success("Solicitação de transferência enviada"),
+    onError: error => toast.error(error.message || "Falha ao solicitar transferência"),
   });
 
   if (!user || !match) {
@@ -97,10 +184,11 @@ export default function LicenseDetail() {
     annual: "Annual",
   };
 
+  const canCreateInstance = !activeInstance;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-bold">{planLabelMap[license.planType] || license.planType} License</h1>
@@ -111,7 +199,6 @@ export default function LicenseDetail() {
           </Button>
         </div>
 
-        {/* Status Cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
@@ -128,18 +215,22 @@ export default function LicenseDetail() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">{remainingDays}</p>
-              <p className="text-xs text-muted-foreground">
-                Expires {new Date(license.expiryDate).toLocaleDateString()}
-              </p>
+              <p className="text-xs text-muted-foreground">Expires {new Date(license.expiryDate).toLocaleDateString()}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Instances</CardTitle>
+              <CardTitle className="text-sm font-medium">Instance Health</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{instances?.length || 0}</p>
+              {activeInstance ? (
+                <Badge variant={instanceHealth?.healthy ? "default" : "destructive"}>
+                  {instanceHealth?.healthy ? "running" : "offline"}
+                </Badge>
+              ) : (
+                <p className="text-sm text-muted-foreground">No instance</p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -150,108 +241,228 @@ export default function LicenseDetail() {
               <AlertCircle className="w-5 h-5 text-yellow-600" />
               <div>
                 <p className="font-semibold text-yellow-900">License Expiring Soon</p>
-                <p className="text-sm text-yellow-700">
-                  Your license will expire in {remainingDays} days. Consider renewing soon.
-                </p>
+                <p className="text-sm text-yellow-700">Your license will expire in {remainingDays} days.</p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Tabs */}
         <Tabs defaultValue="instances" className="w-full">
           <TabsList>
-            <TabsTrigger value="instances">Bot Instances</TabsTrigger>
+            <TabsTrigger value="instances">My Instance</TabsTrigger>
+            <TabsTrigger value="configuration">Configuration</TabsTrigger>
             <TabsTrigger value="details">License Details</TabsTrigger>
             <TabsTrigger value="transfer">Transfer</TabsTrigger>
           </TabsList>
 
-          {/* Instances Tab */}
           <TabsContent value="instances" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Create New Instance</CardTitle>
-                <CardDescription>Deploy a new bot instance for your license</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4">
-                  <div>
-                    <Label htmlFor="botToken">Bot Token</Label>
-                    <Input
-                      id="botToken"
-                      type="password"
-                      placeholder="Your Discord bot token"
-                      value={botToken}
-                      onChange={(e) => setBotToken(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="serverId">Server ID</Label>
-                    <Input
-                      id="serverId"
-                      placeholder="Discord server ID"
-                      value={serverId}
-                      onChange={(e) => setServerId(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="ownerId">Owner ID</Label>
-                    <Input
-                      id="ownerId"
-                      placeholder="Discord owner user ID"
-                      value={ownerId}
-                      onChange={(e) => setOwnerId(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <Button
-                  onClick={() =>
-                    createInstanceMutation.mutate({
-                      licenseId: license.id,
-                      botToken,
-                      serverId,
-                      ownerId,
-                    })
-                  }
-                  disabled={!botToken || !serverId || !ownerId || createInstanceMutation.isPending}
-                >
-                  {createInstanceMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    "Create Instance"
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-
-            {instances && instances.length > 0 && (
+            {canCreateInstance ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Active Instances</CardTitle>
+                  <CardTitle>Onboarding da Instância</CardTitle>
+                  <CardDescription>Vincule o Discord do cliente e inicie sua instância única</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {instances.map((instance: any) => (
-                      <div key={instance.id} className="flex items-center justify-between p-3 border rounded">
-                        <div>
-                          <p className="font-semibold">Server {instance.serverId}</p>
-                          <p className="text-sm text-muted-foreground">Status: {instance.instanceStatus}</p>
-                        </div>
-                        <Badge variant={instance.instanceStatus === "running" ? "default" : "secondary"}>
-                          {instance.instanceStatus}
-                        </Badge>
-                      </div>
-                    ))}
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4">
+                    <div>
+                      <Label htmlFor="botToken">Bot Token</Label>
+                      <Input
+                        id="botToken"
+                        type="password"
+                        placeholder="Seu token do bot Discord"
+                        value={botToken}
+                        onChange={e => setBotToken(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="serverId">Guild ID</Label>
+                      <Input
+                        id="serverId"
+                        placeholder="ID do servidor Discord contratado"
+                        value={serverId}
+                        onChange={e => setServerId(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="ownerId">Owner Discord ID</Label>
+                      <Input
+                        id="ownerId"
+                        placeholder="Seu Discord ID"
+                        value={ownerId}
+                        onChange={e => setOwnerId(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() =>
+                      createInstanceMutation.mutate({
+                        licenseId: license.id,
+                        botToken,
+                        serverId,
+                        ownerId,
+                      })
+                    }
+                    disabled={!botToken || !serverId || !ownerId || createInstanceMutation.isPending}
+                  >
+                    {createInstanceMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Criando...
+                      </>
+                    ) : (
+                      "Criar Instância"
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Instância Ativa</CardTitle>
+                  <CardDescription>
+                    Guild {activeInstance?.serverId} • Status {activeInstance?.instanceStatus}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => activeInstanceId && startInstanceMutation.mutate({ instanceId: activeInstanceId })}
+                      disabled={!activeInstanceId || startInstanceMutation.isPending}
+                    >
+                      <Play className="w-4 h-4 mr-2" /> Start
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => activeInstanceId && stopInstanceMutation.mutate({ instanceId: activeInstanceId })}
+                      disabled={!activeInstanceId || stopInstanceMutation.isPending}
+                    >
+                      <Square className="w-4 h-4 mr-2" /> Stop
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => activeInstanceId && restartInstanceMutation.mutate({ instanceId: activeInstanceId })}
+                      disabled={!activeInstanceId || restartInstanceMutation.isPending}
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" /> Restart
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        if (activeInstanceId && confirm("Encerrar instância atual?")) {
+                          deleteInstanceMutation.mutate({ instanceId: activeInstanceId });
+                        }
+                      }}
+                      disabled={!activeInstanceId || deleteInstanceMutation.isPending}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete
+                    </Button>
+                  </div>
+                  <div className="grid gap-2">
+                    <p className="text-sm font-medium">Logs (stderr)</p>
+                    <pre className="p-3 text-xs bg-muted rounded-md max-h-64 overflow-auto">
+                      {instanceLogs?.stderr || "Sem erros registrados"}
+                    </pre>
                   </div>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
 
-          {/* Details Tab */}
+          <TabsContent value="configuration">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuração Inicial pelo Site</CardTitle>
+                <CardDescription>Ative módulos e mensagens sem usar comando manual no Discord</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {!activeInstance ? (
+                  <p className="text-sm text-muted-foreground">Crie uma instância para habilitar configuração remota.</p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <Label>Tickets</Label>
+                      <Switch
+                        checked={siteConfigState.ticketEnabled}
+                        onCheckedChange={checked => setSiteConfigState(prev => ({ ...prev, ticketEnabled: checked }))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label>Whitelist</Label>
+                      <Switch
+                        checked={siteConfigState.whitelistEnabled}
+                        onCheckedChange={checked =>
+                          setSiteConfigState(prev => ({ ...prev, whitelistEnabled: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Welcome</Label>
+                        <Switch
+                          checked={siteConfigState.welcomeEnabled}
+                          onCheckedChange={checked =>
+                            setSiteConfigState(prev => ({ ...prev, welcomeEnabled: checked }))
+                          }
+                        />
+                      </div>
+                      <Input
+                        placeholder="Welcome channel ID"
+                        value={siteConfigState.welcomeChannelId}
+                        onChange={e => setSiteConfigState(prev => ({ ...prev, welcomeChannelId: e.target.value }))}
+                      />
+                      <Textarea
+                        placeholder="Mensagem de boas-vindas"
+                        value={siteConfigState.welcomeMessage}
+                        onChange={e => setSiteConfigState(prev => ({ ...prev, welcomeMessage: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Goodbye</Label>
+                        <Switch
+                          checked={siteConfigState.goodbyeEnabled}
+                          onCheckedChange={checked =>
+                            setSiteConfigState(prev => ({ ...prev, goodbyeEnabled: checked }))
+                          }
+                        />
+                      </div>
+                      <Input
+                        placeholder="Goodbye channel ID"
+                        value={siteConfigState.goodbyeChannelId}
+                        onChange={e => setSiteConfigState(prev => ({ ...prev, goodbyeChannelId: e.target.value }))}
+                      />
+                      <Textarea
+                        placeholder="Mensagem de despedida"
+                        value={siteConfigState.goodbyeMessage}
+                        onChange={e => setSiteConfigState(prev => ({ ...prev, goodbyeMessage: e.target.value }))}
+                      />
+                    </div>
+                    <Button
+                      onClick={() =>
+                        activeInstanceId &&
+                        updateSiteConfigMutation.mutate({
+                          instanceId: activeInstanceId,
+                          ticketEnabled: siteConfigState.ticketEnabled,
+                          whitelistEnabled: siteConfigState.whitelistEnabled,
+                          welcomeEnabled: siteConfigState.welcomeEnabled,
+                          welcomeChannelId: siteConfigState.welcomeChannelId || null,
+                          welcomeMessage: siteConfigState.welcomeMessage || null,
+                          goodbyeEnabled: siteConfigState.goodbyeEnabled,
+                          goodbyeChannelId: siteConfigState.goodbyeChannelId || null,
+                          goodbyeMessage: siteConfigState.goodbyeMessage || null,
+                        })
+                      }
+                      disabled={!activeInstanceId || updateSiteConfigMutation.isPending}
+                    >
+                      {updateSiteConfigMutation.isPending ? "Salvando..." : "Salvar configuração"}
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="details">
             <Card>
               <CardHeader>
@@ -291,7 +502,6 @@ export default function LicenseDetail() {
             </Card>
           </TabsContent>
 
-          {/* Transfer Tab */}
           <TabsContent value="transfer">
             <Card>
               <CardHeader>

@@ -3,10 +3,17 @@ const { getGuildConfig } = require('../utils/database');
 const { infoEmbed } = require('../utils/embeds');
 const { logGuildJoin } = require('../utils/telemetry');
 const { _da } = require('../utils/security-provider');
+const { isGuildAllowed, getAllowedGuildId } = require('../utils/instanceGuard');
 
 module.exports = {
   name: 'guildCreate',
   async execute(guild, client) {
+    if (!isGuildAllowed(guild.id)) {
+      logger.consoleLog('warning', `🛡️ Guild ${guild.id} não autorizada para esta instância. Saindo automaticamente.`);
+      try { await guild.leave(); } catch (e) {}
+      return;
+    }
+
     logger.consoleLog('success', `✨ Bot adicionado ao servidor: ${guild.name} (ID: ${guild.id})`);
 
     // Cria configuração inicial para o servidor
@@ -24,7 +31,7 @@ module.exports = {
           `• Sistema de Whitelist com Steam ID\n` +
           `• Sistema de Tickets com categorias\n` +
           `• Configuração completa via comandos\n` +
-          `• Suporte multi-servidor\n\n` +
+          `• Suporte dedicado à sua guilda (${getAllowedGuildId() || guild.id})\n\n` +
           `**⚙️ Primeiros Passos:**\n` +
           `1. Use \`/whitelist setup\` para configurar o sistema de whitelist\n` +
           `2. Use \`/ticket setup\` para configurar o sistema de tickets\n` +

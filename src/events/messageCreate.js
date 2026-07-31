@@ -1,5 +1,6 @@
 const logger = require('../utils/system-logs');
 const { handleWhitelistMessage } = require('../handlers/whitelistHandler');
+const { isGuildAllowed } = require('../utils/instanceGuard');
 
 module.exports = {
   name: 'messageCreate',
@@ -9,6 +10,7 @@ module.exports = {
 
     // Ignora mensagens em DM
     if (!message.guild) return;
+    if (!isGuildAllowed(message.guild.id)) return;
 
     try {
       // Verifica se é um canal de whitelist privado
