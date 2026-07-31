@@ -11,7 +11,6 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
-const { checkSetup } = require('./init-check');
 
 // Carregar variáveis de ambiente
 dotenv.config();

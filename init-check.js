@@ -87,9 +87,10 @@ async function checkSetup() {
   }
 }
 
-// Executar verificação
-checkSetup().then(success => {
-  process.exit(success ? 0 : 1);
-});
-
 module.exports = { checkSetup };
+
+if (require.main === module) {
+  checkSetup().then(success => {
+    process.exit(success ? 0 : 1);
+  });
+}
