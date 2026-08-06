@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { Loader2, Copy, AlertCircle, Play, Square, RotateCcw, Trash2 } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function LicenseDetail() {
@@ -49,24 +49,25 @@ export default function LicenseDetail() {
     goodbyeMessage: "",
   });
 
-  trpc.instances.getSiteConfig.useQuery(
+  const { data: siteConfigData } = trpc.instances.getSiteConfig.useQuery(
     { instanceId: activeInstanceId },
-    {
-      enabled: !!activeInstanceId,
-      onSuccess: data => {
-        setSiteConfigState({
-          ticketEnabled: !!data.ticketEnabled,
-          whitelistEnabled: !!data.whitelistEnabled,
-          welcomeEnabled: !!data.welcomeEnabled,
-          welcomeChannelId: data.welcomeChannelId || "",
-          welcomeMessage: data.welcomeMessage || "",
-          goodbyeEnabled: !!data.goodbyeEnabled,
-          goodbyeChannelId: data.goodbyeChannelId || "",
-          goodbyeMessage: data.goodbyeMessage || "",
-        });
-      },
-    }
+    { enabled: !!activeInstanceId }
   );
+
+  useEffect(() => {
+    if (!siteConfigData) return;
+
+    setSiteConfigState({
+      ticketEnabled: !!siteConfigData.ticketEnabled,
+      whitelistEnabled: !!siteConfigData.whitelistEnabled,
+      welcomeEnabled: !!siteConfigData.welcomeEnabled,
+      welcomeChannelId: siteConfigData.welcomeChannelId || "",
+      welcomeMessage: siteConfigData.welcomeMessage || "",
+      goodbyeEnabled: !!siteConfigData.goodbyeEnabled,
+      goodbyeChannelId: siteConfigData.goodbyeChannelId || "",
+      goodbyeMessage: siteConfigData.goodbyeMessage || "",
+    });
+  }, [siteConfigData]);
 
   const { data: instanceHealth } = trpc.instances.health.useQuery(
     { instanceId: activeInstanceId },
