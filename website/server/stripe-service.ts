@@ -45,7 +45,7 @@ export async function createCheckoutSession(
         quantity: 1,
       },
     ],
-    success_url: `${origin}/dashboard/licenses?payment=success`,
+    success_url: `${origin}/dashboard?payment=success`,
     cancel_url: `${origin}/pricing?payment=cancelled`,
     allow_promotion_codes: true,
   });
@@ -84,7 +84,7 @@ export async function handleCheckoutSessionCompleted(event: Stripe.Event) {
       break;
   }
 
-  const licenseResult = await db.createLicense({
+  const createdLicense = await db.createLicense({
     userId,
     licenseKey,
     planType: planType as any,
@@ -94,7 +94,7 @@ export async function handleCheckoutSessionCompleted(event: Stripe.Event) {
     stripeCustomerId,
   });
 
-  const licenseId = (licenseResult as any)[0]?.insertId || (licenseResult as any).insertId;
+  const licenseId = createdLicense.id;
 
   const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
   const amount = subscription.items.data[0]?.price?.unit_amount || 0;
@@ -115,7 +115,7 @@ export async function handleCheckoutSessionCompleted(event: Stripe.Event) {
     type: 'payment_confirmed',
     title: 'Payment Confirmed',
     content: `Your ${planType} license has been activated. License Key: ${licenseKey}`,
-    actionUrl: `/dashboard/licenses/${licenseId}`,
+    actionUrl: `/licenses/${licenseId}`,
   });
 
   console.log(`[Stripe] License created for user ${userId} with key ${licenseKey}`);

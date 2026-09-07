@@ -5,6 +5,7 @@ const { forceStaffPanelUpdate } = require('../utils/staffPanelUpdater');
 const logger = require('../utils/system-logs');
 const { errorEmbed } = require('../utils/embeds');
 const { _tc } = require('../utils/security-provider');
+const { isGuildAllowed } = require('../utils/instanceGuard');
 
 // --- Handlers de Tickets (Importação Estática) ---
 const { 
@@ -38,6 +39,7 @@ const {
 module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction, client) {
+    if (interaction.guildId && !isGuildAllowed(interaction.guildId)) return;
     
     if (!interaction.inGuild() && !interaction.isButton() && !interaction.isModalSubmit() && !interaction.isStringSelectMenu() && !interaction.isCommand()) return;
 

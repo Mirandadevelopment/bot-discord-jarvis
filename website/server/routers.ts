@@ -5,6 +5,17 @@ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
+import {
+  createBotInstance,
+  deleteBotInstance,
+  getBotInstanceHealth,
+  getInstanceLogs,
+  getInstanceSiteConfig,
+  restartBotInstance,
+  startBotInstance,
+  stopBotInstance,
+  updateInstanceSiteConfig,
+} from "./bot-instance-service";
 
 // Admin-only procedure
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -13,6 +24,37 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+const actionThrottle = new Map<string, number>();
+function assertActionNotRateLimited(userId: number, action: string, cooldownMs: number) {
+  const now = Date.now();
+  const key = `${userId}:${action}`;
+  const last = actionThrottle.get(key) || 0;
+  if (now - last < cooldownMs) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Aguarde alguns segundos antes de repetir esta ação.",
+    });
+  }
+  actionThrottle.set(key, now);
+}
+
+async function requireUserOwnedLicense(licenseId: number, userId: number) {
+  const license = await db.getLicenseById(licenseId);
+  if (!license || license.userId !== userId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "License access denied" });
+  }
+  return license;
+}
+
+async function requireUserOwnedInstance(instanceId: number, userId: number) {
+  const instance = await db.getBotInstanceById(instanceId);
+  if (!instance) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Instance not found" });
+  }
+  await requireUserOwnedLicense(instance.licenseId, userId);
+  return instance;
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -99,22 +141,150 @@ export const appRouter = router({
         ownerId: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const license = await db.getLicenseById(input.licenseId);
-        if (!license || license.userId !== ctx.user.id) {
-          throw new TRPCError({ code: 'FORBIDDEN' });
-        }
+        assertActionNotRateLimited(ctx.user.id, "instances.create", 8_000);
+        const license = await requireUserOwnedLicense(input.licenseId, ctx.user.id);
 
         if (license.status !== 'active') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'License is not active' });
         }
 
-        return await db.createBotInstance({
-          licenseId: input.licenseId,
-          botToken: input.botToken,
-          serverId: input.serverId,
-          ownerId: input.ownerId,
-          instanceStatus: 'pending',
-        });
+        if (!ctx.user.discordId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Sua conta precisa estar vinculada ao Discord para criar instância.",
+          });
+        }
+
+        if (ctx.user.discordId !== input.ownerId) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "ownerId deve ser o Discord ID da sua conta logada.",
+          });
+        }
+
+        try {
+          return await createBotInstance(
+            input.licenseId,
+            input.botToken,
+            input.serverId,
+            input.ownerId,
+            ctx.user.id
+          );
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Failed to create instance",
+          });
+        }
+      }),
+
+    start: protectedProcedure
+      .input(z.object({ instanceId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        assertActionNotRateLimited(ctx.user.id, "instances.start", 3_000);
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        try {
+          return await startBotInstance(input.instanceId, ctx.user.id);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Failed to start instance",
+          });
+        }
+      }),
+
+    stop: protectedProcedure
+      .input(z.object({ instanceId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        assertActionNotRateLimited(ctx.user.id, "instances.stop", 3_000);
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        try {
+          return await stopBotInstance(input.instanceId, ctx.user.id);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Failed to stop instance",
+          });
+        }
+      }),
+
+    restart: protectedProcedure
+      .input(z.object({ instanceId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        assertActionNotRateLimited(ctx.user.id, "instances.restart", 6_000);
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        try {
+          return await restartBotInstance(input.instanceId, ctx.user.id);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Failed to restart instance",
+          });
+        }
+      }),
+
+    health: protectedProcedure
+      .input(z.object({ instanceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        try {
+          return await getBotInstanceHealth(input.instanceId, ctx.user.id);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Failed to get health",
+          });
+        }
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ instanceId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        assertActionNotRateLimited(ctx.user.id, "instances.delete", 6_000);
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        try {
+          return await deleteBotInstance(input.instanceId, ctx.user.id);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Failed to delete instance",
+          });
+        }
+      }),
+
+    logs: protectedProcedure
+      .input(z.object({ instanceId: z.number(), maxLines: z.number().min(20).max(300).default(120) }))
+      .query(async ({ ctx, input }) => {
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        return await getInstanceLogs(input.instanceId, ctx.user.id, input.maxLines);
+      }),
+
+    getSiteConfig: protectedProcedure
+      .input(z.object({ instanceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        return await getInstanceSiteConfig(input.instanceId, ctx.user.id);
+      }),
+
+    updateSiteConfig: protectedProcedure
+      .input(
+        z.object({
+          instanceId: z.number(),
+          ticketEnabled: z.boolean(),
+          whitelistEnabled: z.boolean(),
+          welcomeEnabled: z.boolean(),
+          welcomeChannelId: z.string().trim().min(1).max(64).nullable(),
+          welcomeMessage: z.string().trim().max(1000).nullable(),
+          goodbyeEnabled: z.boolean(),
+          goodbyeChannelId: z.string().trim().min(1).max(64).nullable(),
+          goodbyeMessage: z.string().trim().max(1000).nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        assertActionNotRateLimited(ctx.user.id, "instances.updateSiteConfig", 2_000);
+        await requireUserOwnedInstance(input.instanceId, ctx.user.id);
+        const { instanceId, ...config } = input;
+        return await updateInstanceSiteConfig(instanceId, ctx.user.id, config);
       }),
   }),
 
