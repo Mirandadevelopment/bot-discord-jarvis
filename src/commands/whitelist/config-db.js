@@ -2,6 +2,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { getWhitelistConfig, saveWhitelistConfig } = require('../../utils/database');
 const { successEmbed, errorEmbed } = require('../../utils/embeds');
 const logger = require('../../utils/system-logs');
+const { assertSqlIdentifier } = require('../../utils/sqlIdentifiers');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -47,11 +48,11 @@ module.exports = {
     try {
       await interaction.deferReply({ ephemeral: true });
 
-      const tableName = interaction.options.getString('tabela');
-      const whitelistColumn = interaction.options.getString('coluna_whitelist');
+      const tableName = assertSqlIdentifier(interaction.options.getString('tabela'), 'tabela');
+      const whitelistColumn = assertSqlIdentifier(interaction.options.getString('coluna_whitelist'), 'coluna_whitelist');
       const idType = interaction.options.getString('tipo_id');
-      const idColumn = interaction.options.getString('coluna_id') || 'id';
-      const steamColumn = interaction.options.getString('coluna_steam') || 'steam';
+      const idColumn = assertSqlIdentifier(interaction.options.getString('coluna_id') || 'id', 'coluna_id');
+      const steamColumn = assertSqlIdentifier(interaction.options.getString('coluna_steam') || 'steam', 'coluna_steam');
 
       // Obtém configuração existente
       const config = getWhitelistConfig(interaction.guildId) || {};

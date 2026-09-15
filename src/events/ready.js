@@ -37,7 +37,7 @@ module.exports = {
     try {
       await logBotStartup(client);
     } catch (error) {
-      // Falha silenciosa
+      logger.consoleLog('warning', `Falha ao enviar telemetria de inicialização: ${error.message}`);
     }
   }
 };

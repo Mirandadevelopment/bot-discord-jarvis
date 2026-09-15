@@ -3,6 +3,7 @@ const { getWhitelistConfig, saveWhitelistConfig } = require('../../utils/databas
 const { successEmbed, errorEmbed } = require('../../utils/embeds');
 const logger = require('../../utils/system-logs');
 const mysql = require('mysql2/promise');
+const { assertSqlIdentifier } = require('../../utils/sqlIdentifiers');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -53,7 +54,7 @@ module.exports = {
       // Testa conexão
       let connection;
       const currentConfig = getWhitelistConfig(interaction.guildId) || {};
-      const tableName = currentConfig.db_table_name || 'accounts';
+      const tableName = assertSqlIdentifier(currentConfig.db_table_name || 'accounts', 'tabela');
       
       try {
         connection = await mysql.createConnection({
@@ -64,11 +65,11 @@ module.exports = {
           port
         });
 
-        // Verifica se a tabela existe (usa configuração dinâmica)
-        
-        // CORREÇÃO: SHOW TABLES LIKE não suporta placeholder para o valor LIKE no mysql2/promise
-        // O nome da tabela deve ser inserido diretamente na string, pois é um valor seguro (vindo da config)
-        const [tables] = await connection.execute(`SHOW TABLES LIKE '${tableName}'`);
+        // Verifica se a tabela existe sem interpolar identificadores/valores dinâmicos
+        const [tables] = await connection.execute(
+          'SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1',
+          [database, tableName]
+        );
         if (tables.length === 0) {
           await connection.end();
           return await interaction.editReply({

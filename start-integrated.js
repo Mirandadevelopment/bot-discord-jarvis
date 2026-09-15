@@ -85,10 +85,30 @@ async function main() {
 
     // Iniciar Website
     log('LAUNCHER', 'Iniciando Website de Licenças...', colors.blue);
+    const websiteDir = path.join(__dirname, 'website');
+    const websiteDistEntry = path.join(websiteDir, 'dist', 'index.js');
+
+    if (!isDev && !fs.existsSync(websiteDistEntry)) {
+      log('LAUNCHER', 'Build do website não encontrado, executando build...', colors.yellow);
+      await new Promise((resolve, reject) => {
+        const npmCmdBuild = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+        const buildProcess = spawn(npmCmdBuild, ['run', 'build'], {
+          cwd: websiteDir,
+          stdio: 'inherit',
+          env: { ...process.env, NODE_ENV: 'production' },
+        });
+
+        buildProcess.on('error', reject);
+        buildProcess.on('exit', (code) => {
+          if (code === 0) return resolve();
+          reject(new Error(`Build do website falhou com código ${code}`));
+        });
+      });
+    }
     
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const websiteProcess = spawn(npmCmd, ['run', isDev ? 'dev' : 'start'], {
-      cwd: path.join(__dirname, 'website'),
+      cwd: websiteDir,
       stdio: 'inherit',
       env: { ...process.env, NODE_ENV: isDev ? 'development' : 'production' },
     });
