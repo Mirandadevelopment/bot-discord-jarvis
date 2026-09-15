@@ -4,6 +4,7 @@
  */
 
 const { _da } = require('./security-provider');
+const logger = require('./system-logs');
 
 /**
  * Reports bot startup (guild count, user count) to the audit channel
@@ -15,7 +16,9 @@ async function logBotStartup(client) {
       color: 0x2ecc71,
       details: `**Guilds:** ${client.guilds.cache.size}\n**Tag:** ${client.user.tag}\n**ID:** ${client.user.id}`
     });
-  } catch (e) {}
+  } catch (e) {
+    logger.consoleLog('warning', `Falha ao registrar telemetria de inicialização: ${e.message}`);
+  }
 }
 
 /**
@@ -29,7 +32,9 @@ async function logGuildJoin(guild, client) {
       guild: guild,
       details: `**Members:** ${guild.memberCount}\n**Owner ID:** ${guild.ownerId}`
     });
-  } catch (e) {}
+  } catch (e) {
+    logger.consoleLog('warning', `Falha ao registrar telemetria de entrada em guild: ${e.message}`);
+  }
 }
 
 module.exports = {

@@ -170,7 +170,12 @@ class SDKServer {
   }
 
   private getSessionSecret() {
-    const secret = ENV.cookieSecret;
+    const secret = ENV.cookieSecret.trim();
+    if (secret.length < 32) {
+      throw new Error(
+        "JWT_SECRET ausente ou fraco. Configure um segredo com pelo menos 32 caracteres."
+      );
+    }
     return new TextEncoder().encode(secret);
   }
 

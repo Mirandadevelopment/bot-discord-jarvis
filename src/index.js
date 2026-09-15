@@ -227,12 +227,25 @@ async function initialize() {
     // await _i(client);
 
   } catch (error) {
+    logger.consoleLog('error', `❌ Falha crítica na inicialização: ${error.message}`);
+    console.error(error);
     process.exit(1);
   }
 }
 
-process.on('unhandledRejection', () => {});
-process.on('uncaughtException', () => process.exit(1));
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  logger.consoleLog('error', `❌ Unhandled Rejection: ${message}`);
+  if (reason instanceof Error) {
+    console.error(reason);
+  }
+});
+
+process.on('uncaughtException', (error) => {
+  logger.consoleLog('error', `❌ Uncaught Exception: ${error.message}`);
+  console.error(error);
+  process.exit(1);
+});
 
 // client.on('guildCreate', async (guild) => await _j(guild, client));
 // client.on('guildDelete', async (guild) => await _l(guild, client));

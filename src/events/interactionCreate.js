@@ -25,7 +25,8 @@ const {
 // --- Handler de IA de Atendimento (Importação Estática) ---
 const {
     handleAIStart,
-    handleAIChoice
+    handleAIChoice,
+    handleAIVoiceToggle
 } = require('../handlers/conversationHandler');
 
 // --- Handler de Recrutamento (Importação Estática) ---

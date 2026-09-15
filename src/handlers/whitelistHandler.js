@@ -14,6 +14,7 @@ const {
 } = require('../utils/embeds');
 const { whitelistStartedEmbedDynamic } = require('../utils/dynamicEmbeds');
 const logger = require('../utils/system-logs');
+const { assertSqlIdentifier } = require('../utils/sqlIdentifiers');
 
 /**
  * Cria conexão com MySQL usando configurações do servidor
@@ -54,10 +55,12 @@ function isValidIdFormat(id, idType) {
  */
 async function checkIdInDatabase(connection, id, config) {
   try {
-    const tableName = config.db_table_name || 'accounts';
+    const tableName = assertSqlIdentifier(config.db_table_name || 'accounts', 'tabela');
     const idType = config.db_id_type || 'numeric';
-    const idColumn = idType === 'numeric' ? (config.db_id_column || 'id') : (config.db_steam_column || 'steam');
-    const whitelistColumn = config.db_whitelist_column || 'whitelist';
+    const idColumn = idType === 'numeric'
+      ? assertSqlIdentifier(config.db_id_column || 'id', 'coluna_id')
+      : assertSqlIdentifier(config.db_steam_column || 'steam', 'coluna_steam');
+    const whitelistColumn = assertSqlIdentifier(config.db_whitelist_column || 'whitelist', 'coluna_whitelist');
     
     // Query dinâmica
     const query = `SELECT * FROM ${tableName} WHERE ${idColumn} = ?`;
@@ -82,10 +85,12 @@ async function checkIdInDatabase(connection, id, config) {
  */
 async function approveWhitelist(connection, id, config) {
   try {
-    const tableName = config.db_table_name || 'accounts';
+    const tableName = assertSqlIdentifier(config.db_table_name || 'accounts', 'tabela');
     const idType = config.db_id_type || 'numeric';
-    const idColumn = idType === 'numeric' ? (config.db_id_column || 'id') : (config.db_steam_column || 'steam');
-    const whitelistColumn = config.db_whitelist_column || 'whitelist';
+    const idColumn = idType === 'numeric'
+      ? assertSqlIdentifier(config.db_id_column || 'id', 'coluna_id')
+      : assertSqlIdentifier(config.db_steam_column || 'steam', 'coluna_steam');
+    const whitelistColumn = assertSqlIdentifier(config.db_whitelist_column || 'whitelist', 'coluna_whitelist');
     
     // Query dinâmica
     const query = `UPDATE ${tableName} SET ${whitelistColumn} = 1 WHERE ${idColumn} = ?`;

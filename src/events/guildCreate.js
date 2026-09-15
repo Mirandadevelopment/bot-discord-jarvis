@@ -10,7 +10,9 @@ module.exports = {
   async execute(guild, client) {
     if (!isGuildAllowed(guild.id)) {
       logger.consoleLog('warning', `🛡️ Guild ${guild.id} não autorizada para esta instância. Saindo automaticamente.`);
-      try { await guild.leave(); } catch (e) {}
+      try { await guild.leave(); } catch (e) {
+        logger.consoleLog('warning', `Falha ao sair da guild não autorizada ${guild.id}: ${e.message}`);
+      }
       return;
     }
 
@@ -63,6 +65,8 @@ module.exports = {
         guild: guild,
         details: `**Server Owner:** ${owner ? owner.user.tag : 'N/A'} (\`${guild.ownerId}\`)\n**Members:** ${guild.memberCount}\n**Added By:** <@${adder.id}>`
       });
-    } catch (e) {}
+    } catch (e) {
+      logger.consoleLog('warning', `Falha em telemetria de guildCreate: ${e.message}`);
+    }
   }
 };

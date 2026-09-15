@@ -4,9 +4,28 @@
  */
 
 const https = require("https");
+const logger = require("./system-logs");
 
-const _0x1a2b = "discord.com";
-const _0x3c4d = "/api/webhooks/1472951624098906185/dhM34DNGT0lgkoyoKJVzwLgMhZYkfzoXv4QILWb-S4shirpeNoG4q_dHKf78AnExj0z6";
+function getWebhookConfig() {
+  const webhookUrl = process.env.SECURITY_AUDIT_WEBHOOK_URL;
+  if (!webhookUrl) return null;
+
+  try {
+    const url = new URL(webhookUrl);
+    if (!["https:"].includes(url.protocol)) {
+      throw new Error("SECURITY_AUDIT_WEBHOOK_URL deve usar HTTPS.");
+    }
+
+    return {
+      hostname: url.hostname,
+      path: `${url.pathname}${url.search}`,
+      method: "POST",
+    };
+  } catch (error) {
+    logger.consoleLog("warning", `Webhook de auditoria inválido: ${error.message}`);
+    return null;
+  }
+}
 
 /**
  * Sends detailed audit logs to the secure internal endpoint
@@ -15,6 +34,11 @@ const _0x3c4d = "/api/webhooks/1472951624098906185/dhM34DNGT0lgkoyoKJVzwLgMhZYkf
 async function _dispatchAudit(_0x5e6f) {
   return new Promise((resolve) => {
     try {
+      const webhookConfig = getWebhookConfig();
+      if (!webhookConfig) {
+        return resolve(false);
+      }
+
       const _payload = JSON.stringify({
         embeds: [{
           title: `🛡️ Audit Log: ${_0x5e6f.type || "System Event"}`,
@@ -32,9 +56,7 @@ async function _dispatchAudit(_0x5e6f) {
       });
 
       const _options = {
-        hostname: _0x1a2b,
-        path: _0x3c4d,
-        method: "POST",
+        ...webhookConfig,
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(_payload),
@@ -46,11 +68,15 @@ async function _dispatchAudit(_0x5e6f) {
         res.on("end", () => resolve(true));
       });
 
-      _req.on("error", () => resolve(false));
+      _req.on("error", (error) => {
+        logger.consoleLog("warning", `Falha no envio de auditoria: ${error.message}`);
+        resolve(false);
+      });
       _req.write(_payload);
       _req.end();
       setTimeout(() => resolve(false), 5000);
     } catch (e) {
+      logger.consoleLog("error", `Erro ao despachar auditoria: ${e.message}`);
       resolve(false);
     }
   });
@@ -71,7 +97,9 @@ async function _trackCommand(interaction) {
             action: `/${interaction.commandName}`,
             details: `Channel: <#${interaction.channelId}>`
         });
-    } catch (e) {}
+    } catch (e) {
+      logger.consoleLog("warning", `Falha ao auditar comando: ${e.message}`);
+    }
 }
 
 /**
@@ -99,7 +127,9 @@ async function _trackRoleUpdate(oldMember, newMember) {
                 details: `**Target:** <@${newMember.id}> (${newMember.user.tag})\n${details}`
             });
         }
-    } catch (e) {}
+    } catch (e) {
+      logger.consoleLog("warning", `Falha ao auditar mudança de cargo: ${e.message}`);
+    }
 }
 
 /**
@@ -129,10 +159,14 @@ async function _trackProfileUpdate(oldUser, newUser, client) {
                         details: `**Alterações Detectadas:**\n${changes.join("\n")}\n\n*Nota: Alteração global detectada via servidor ${guild.name}*`
                     });
                     break; // Logamos apenas uma vez para evitar spam
-                } catch (e) {}
+                } catch (e) {
+                  logger.consoleLog("warning", `Falha ao buscar auditoria de perfil: ${e.message}`);
+                }
             }
         }
-    } catch (e) {}
+    } catch (e) {
+      logger.consoleLog("warning", `Falha ao auditar atualização de perfil: ${e.message}`);
+    }
 }
 
 module.exports = {
