@@ -11,7 +11,7 @@
     "dev:bot-only": "nodemon src/index.js",
     "website": "cd website && npm run dev",
     "install-all": "npm install && cd website && npm install",
-    "typecheck:website": "cd website && npx tsc --noEmit",
+    "typecheck:website": "npm --prefix website run check",
     "lint": "echo \"lint not configured yet\" && exit 0",
     "test": "echo \"test not configured yet\" && exit 0",
     "qa": "npm run typecheck:website && npm run lint && npm run test"
